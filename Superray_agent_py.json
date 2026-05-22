@@ -1,0 +1,513 @@
+{
+  "name": "My workflow 3",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a5407714-82fb-4365-9d0a-656bdb67d1fb",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1,
+      "position": [
+        48,
+        416
+      ],
+      "notesInFlow": false,
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"answer\": $json.output || $json.answer || $json.response || $json.text || $json.message || '', \"source\": $json.source || $json.metadata?.file_title || $json.metadata?.title || ($json.sources && $json.sources[0] && ($json.sources[0].title || $json.sources[0].file_title || $json.sources[0].name || $json.sources[0].source || $json.sources[0].metadata?.file_title || $json.sources[0].metadata?.title || $json.sources[0].document?.metadata?.file_title)) || '', \"confidence\": $json.confidence ?? $json.score ?? ($json.sources && $json.sources[0] && ($json.sources[0].confidence ?? $json.sources[0].score ?? $json.sources[0].relevance_score ?? $json.sources[0].metadata?.score)) ?? '', \"sources\": $json.sources || [] } }}",
+        "options": {}
+      },
+      "id": "cdf70a80-4dac-4391-8713-66c3353de98b",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        752,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9a9a245e-f1a1-4282-bb02-a81ffe629f0f",
+              "name": "chatInput",
+              "value": "={{ $json?.chatInput || $json?.body?.chatInput || $json?.query?.chatInput || $json?.text || $json?.message || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "b80831d8-c653-4203-8706-adedfdb98f77",
+              "name": "sessionId",
+              "value": "={{ $json?.sessionId || $json?.body?.sessionId || $json?.query?.sessionId || $json?.chat?.sessionId || $json?.metadata?.sessionId || $json?.headers?.['x-session-id'] || ('session-' + Date.now()) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "42c86359-dd3b-4236-b5f8-3e788bb84950",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -176,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Hi there! 👋\nMy name is Ray. How can I assist you today?",
+        "options": {}
+      },
+      "id": "99e415e3-ddf9-4d35-bce7-b7d8860bd25e",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -512,
+        112
+      ],
+      "webhookId": "e104e40e-6134-4825-a6f0-8a646d882662"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to fetch all available documents, including the table schema if the file is a CSV or Excel file.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "document_metadata",
+          "mode": "list",
+          "cachedResultName": "document_metadata"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        176,
+        528
+      ],
+      "id": "78d97ffe-79cd-4178-ba72-c77cc5abfa60",
+      "name": "List Documents",
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Given a file ID, fetches the text from the document.",
+        "operation": "executeQuery",
+        "query": "SELECT \n    string_agg(text, ' ') as document_text\nFROM documents_pg\n  WHERE metadata->>'file_id' = $1\nGROUP BY metadata->>'file_id';",
+        "options": {
+          "queryReplacement": "={{ $fromAI('file_id') }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        288,
+        448
+      ],
+      "id": "d8de0be7-358e-4df8-a3d6-2d5ec751061f",
+      "name": "Get File Contents",
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Run a SQL query - use this to query from the document_rows table once you know the file ID you are querying. dataset_id is the file_id and you are always using the row_data for filtering, which is a jsonb field that has all the keys from the file schema given in the document_metadata table.\n\nExample query:\n\nSELECT AVG((row_data->>'revenue')::numeric)\nFROM document_rows\nWHERE dataset_id = '123';\n\nExample query 2:\n\nSELECT \n    row_data->>'category' as category,\n    SUM((row_data->>'sales')::numeric) as total_sales\nFROM dataset_rows\nWHERE dataset_id = '123'\nGROUP BY row_data->>'category';",
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('sql_query') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        400,
+        400
+      ],
+      "id": "9dd94c16-7205-485b-82aa-2146b8004236",
+      "name": "Query Document Rows",
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topN": 4
+      },
+      "type": "@n8n/n8n-nodes-langchain.rerankerCohere",
+      "typeVersion": 1,
+      "position": [
+        784,
+        416
+      ],
+      "id": "ed656cc7-369a-4900-97f4-d0f30f02a371",
+      "name": "Reranker Cohere",
+      "credentials": {
+        "cohereApi": {
+          "id": "i5eu0rBzNkw8DN28",
+          "name": "CohereApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Use RAG to look up information in the knowledgebase.",
+        "tableName": "documents_pg",
+        "topK": 25,
+        "useReranker": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1.3,
+      "position": [
+        576,
+        256
+      ],
+      "id": "294a2750-cf9f-47b5-af9f-da89cd4d767b",
+      "name": "Postgres PGVector Store",
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-2-preview"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        592,
+        448
+      ],
+      "id": "17ebcb32-b06c-46c9-b82e-81410438ae90",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "JyAeQGMhymcGRr84",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        400
+      ],
+      "id": "935201b2-9987-4451-9999-763c3b1b0fac",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "JyAeQGMhymcGRr84",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are a strict knowledge assistant that answers questions using a structured document knowledge base.\n\nYou have access to tools that allow you to:\n- Perform RAG search over the 'documents' table\n- Retrieve document metadata from 'document_metadata'\n- Extract full document content when needed\n- Query structured/tabular data from 'document_rows' using SQL\n\n---\n\n## CORE BEHAVIOR\n\n1. ALWAYS begin by performing a RAG search to find relevant information.\n\n2. If the query requires numerical aggregation or structured analysis (e.g., sums, averages, comparisons), use SQL queries on the 'document_rows' table instead of RAG.\n\n3. If RAG results are insufficient:\n   - Identify relevant documents from metadata\n   - Retrieve and analyze their contents\n\n---\n\n## STRICT RULES (NON-NEGOTIABLE)\n\n- Answer ONLY using retrieved context from the knowledge base\n- DO NOT use prior knowledge or assumptions\n- DO NOT hallucinate or fabricate information\n- If no relevant information is found, respond exactly:\n  \"No relevant information found in the knowledge base.\"\n\n---\n\n## SOURCE & CONFIDENCE REQUIREMENTS\n\nYou MUST include:\n- The exact document name (file_title) from the retrieved context\n- A confidence score based on how directly the answer is supported\n\nConfidence scoring:\n- High (80–100%): Answer clearly present in a single document\n- Medium (50–79%): Answer derived from multiple pieces of context\n- Low (0–49%): Weak or partial relevance\n\n---\n\n## OUTPUT FORMAT (MANDATORY)\n\nRespond in EXACTLY this format:\n\nAnswer: <your answer>\n\n\n\n***Source: <document name>***\n\n***Confidence: <percentage>***"
+        }
+      },
+      "id": "445ebb06-154f-4cad-980a-5132843dd17e",
+      "name": "RAY AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        32,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ray-rag-model",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -464,
+        352
+      ],
+      "id": "49eaefda-cd21-4478-b287-d6f3d8b8586e",
+      "name": "Webhook1",
+      "webhookId": "edfe2ad2-de2a-40d4-9d35-70997c10294a"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS public.ray_chat_history (\n  id BIGSERIAL PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  message_type TEXT NOT NULL CHECK (message_type IN ('user', 'assistant')),\n  content TEXT NOT NULL,\n  source TEXT,\n  confidence TEXT,\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\nCREATE INDEX IF NOT EXISTS idx_ray_chat_history_session_created_at\nON public.ray_chat_history (session_id, created_at DESC);",
+        "options": {}
+      },
+      "id": "c6b3034f-fc9e-46ff-9458-b512ad60af52",
+      "name": "Ensure Chat History Table",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.ray_chat_history (session_id, message_type, content, source, confidence, created_at)\nVALUES (\n  '{{ (($json.sessionId || $('Edit Fields').first().json.sessionId || '') + '').replaceAll(\"'\", \"''\") }}',\n  'user',\n  '{{ (($json.chatInput || $('Edit Fields').first().json.chatInput || '') + '').replaceAll(\"'\", \"''\") }}',\n  NULL,\n  NULL,\n  NOW()\n);",
+        "options": {}
+      },
+      "id": "027d1fcc-0bdc-422d-9fd3-25b92a5367d7",
+      "name": "Insert User Chat History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.ray_chat_history (session_id, message_type, content, source, confidence, created_at)\nVALUES (\n  '{{ (($json.sessionId || $('Edit Fields').first().json.sessionId || '') + '').replaceAll(\"'\", \"''\") }}',\n  'assistant',\n  '{{ (($json.output || $json.answer || $json.response || $json.text || $json.message || '') + '').replaceAll(\"'\", \"''\") }}',\n  '{{ (($json.source || '') + '').replaceAll(\"'\", \"''\") }}',\n  '{{ (($json.confidence ?? '') + '').replaceAll(\"'\", \"''\") }}',\n  NOW()\n);",
+        "options": {}
+      },
+      "id": "99aba751-1be3-4b67-a0d0-14ba0cdd8076",
+      "name": "Insert Assistant Chat History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        432,
+        48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "inGJu5lztM4tIKzx",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Ensure Chat History Table",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RAY AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get File Contents": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Document Rows": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reranker Cohere": {
+      "ai_reranker": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "ai_reranker",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAY AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAY AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Insert Assistant Chat History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Chat History Table": {
+      "main": [
+        [
+          {
+            "node": "Insert User Chat History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3d55a8a3-29e4-4a61-823b-7ee4ecfff4c0",
+  "meta": {
+    "instanceId": "8c7d0d2e990ba3ebd6938a443edfff80ce14ab985784dec5f3f2a0bb7efdcdee"
+  },
+  "id": "uef8cySjUredOgp9",
+  "tags": []
+}

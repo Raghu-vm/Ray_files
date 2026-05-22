@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+asyncpg
+pgvector
+google-generativeai
+cohere
+python-dotenv
